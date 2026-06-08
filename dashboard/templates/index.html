@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Canary-Net Security Dashboard</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0f1419;
+            --bg-secondary: #1a1f2e;
+            --bg-tertiary: #252d3d;
+            --text-primary: #e0e6ed;
+            --text-secondary: #9ca3af;
+            --border-color: #3a4454;
+            --accent-red: #ef4444;
+            --accent-amber: #f59e0b;
+            --accent-blue: #3b82f6;
+            --accent-green: #10b981;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid var(--accent-red);
+        }
+
+        h1 {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--accent-red);
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.connected {
+            background: var(--accent-green);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Stats Bar */
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--accent-red);
+        }
+
+        .stat-card:nth-child(2) .stat-value { color: var(--accent-amber); }
+        .stat-card:nth-child(3) .stat-value { color: var(--accent-blue); }
+        .stat-card:nth-child(4) .stat-value { color: var(--accent-green); }
+
+        /* Main Content Grid */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        /* Live Alert Feed */
+        .alert-feed-section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .section-title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            color: var(--text-primary);
+        }
+
+        .alerts-table-wrapper {
+            overflow-x: auto;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th {
+            text-align: left;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border-bottom: 2px solid var(--border-color);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+            position: sticky;
+            top: 0;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        tbody tr {
+            transition: all 0.3s ease;
+        }
+
+        tbody tr:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        /* Alert row coloring by service */
+        tbody tr.service-ssh,
+        tbody tr.service-ftp {
+            border-left: 4px solid var(--accent-red);
+        }
+
+        tbody tr.service-http {
+            border-left: 4px solid var(--accent-amber);
+        }
+
+        tbody tr.service-smb {
+            border-left: 4px solid var(--accent-blue);
+        }
+
+        /* Flash animation for new alerts */
+        @keyframes alertFlash {
+            0% {
+                background: rgba(239, 68, 68, 0.3);
+            }
+            100% {
+                background: transparent;
+            }
+        }
+
+        tbody tr.alert-new {
+            animation: alertFlash 1s ease-out;
+        }
+
+        .time-col {
+            font-family: 'Courier New', monospace;
+            color: var(--text-secondary);
+            font-size: 12px;
+        }
+
+        .canary-col {
+            font-weight: 600;
+            color: var(--accent-red);
+        }
+
+        .ip-col {
+            font-family: 'Courier New', monospace;
+            color: var(--text-primary);
+        }
+
+        .port-col {
+            font-family: 'Courier New', monospace;
+            color: var(--text-secondary);
+        }
+
+        .behavior-col {
+            max-width: 200px;
+            word-break: break-word;
+            color: var(--text-secondary);
+        }
+
+        .status-badge-cell {
+            display: inline-block;
+            padding: 4px 8px;
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--accent-red);
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .status-badge-cell.acknowledged {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--accent-green);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+
+        /* Live Intrusion Map */
+        .intrusion-map-section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .canary-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .canary-node {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .canary-node:hover {
+            border-color: var(--accent-red);
+            box-shadow: 0 0 12px rgba(239, 68, 68, 0.2);
+        }
+
+        .canary-node.triggered {
+            border-color: var(--accent-red);
+            background: rgba(239, 68, 68, 0.1);
+            box-shadow: 0 0 16px rgba(239, 68, 68, 0.3);
+        }
+
+        .canary-name {
+            font-weight: 600;
+            color: var(--text-primary);
+            font-size: 13px;
+        }
+
+        .canary-counter {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            background: var(--accent-red);
+            color: white;
+            border-radius: 4px;
+            font-weight: 700;
+            font-size: 12px;
+        }
+
+        .canary-counter.idle {
+            background: var(--border-color);
+            color: var(--text-secondary);
+        }
+
+        /* Bottom sections */
+        .full-width-section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .info-item {
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+            border-left: 3px solid var(--accent-red);
+        }
+
+        .info-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+
+        .info-value {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            font-family: 'Courier New', monospace;
+        }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 12px;
+            }
+
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 12px;
+            }
+
+            h1 {
+                font-size: 22px;
+            }
+
+            .stats-bar {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            table {
+                font-size: 12px;
+            }
+
+            th, td {
+                padding: 8px;
+            }
+
+            .behavior-col {
+                max-width: 100px;
+                font-size: 11px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <div>
+                <h1>🔴 Canary-Net Security Dashboard</h1>
+            </div>
+            <div class="status-badge">
+                <div class="status-dot" id="status-dot"></div>
+                <span id="status-text">Connecting...</span>
+            </div>
+        </header>
+
+        <!-- Stats Bar -->
+        <div class="stats-bar">
+            <div class="stat-card">
+                <div class="stat-label">Total Alerts</div>
+                <div class="stat-value" id="stat-total-alerts">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Active Attackers</div>
+                <div class="stat-value" id="stat-active-attackers">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Most Triggered</div>
+                <div class="stat-value" id="stat-most-triggered" style="font-size: 16px;">—</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Alerts Last Hour</div>
+                <div class="stat-value" id="stat-last-hour">0</div>
+            </div>
+        </div>
+
+        <!-- Main Grid: Alert Feed + Intrusion Map -->
+        <div class="main-grid">
+            <!-- Live Alert Feed -->
+            <div class="alert-feed-section">
+                <h2 class="section-title">📡 Live Alert Feed</h2>
+                <div class="alerts-table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Canary</th>
+                                <th>Attacker IP</th>
+                                <th>Port</th>
+                                <th>Behavior</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="alerts-tbody">
+                            <tr>
+                                <td colspan="6" class="empty-state">Waiting for alerts...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Live Intrusion Map -->
+            <div class="intrusion-map-section">
+                <h2 class="section-title">🗺️ Intrusion Map</h2>
+                <div class="canary-grid" id="canary-grid">
+                    <div class="empty-state" style="font-size: 12px;">Loading canaries...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Attack Summary -->
+        <div class="full-width-section">
+            <h2 class="section-title">📊 Attack Summary</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">Top Attacker</div>
+                    <div class="info-value" id="info-top-attacker">—</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Most Common Service</div>
+                    <div class="info-value" id="info-common-service">—</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Alerts This Session</div>
+                    <div class="info-value" id="info-session-alerts">0</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Last Alert</div>
+                    <div class="info-value" id="info-last-alert">—</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const config = {
+            maxAlerts: 100,
+            autoRefreshInterval: 5000 // 5 seconds if SocketIO disconnected
+        };
+
+        // State
+        let state = {
+            alerts: [],
+            canaries: new Map(),
+            attackers: new Set(),
+            connected: false,
+            lastRefresh: null,
+            initialLoadComplete: false
+        };
+
+        // SocketIO Connection
+        const socket = io({
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            reconnectionAttempts: 10
+        });
+
+        // =====================================
+        // SocketIO Event Handlers
+        // =====================================
+
+        socket.on('connect', () => {
+            console.log('[Dashboard] Connected to server');
+            updateConnectionStatus(true);
+            socket.emit('subscribe_alerts');
+        });
+
+        socket.on('disconnect', () => {
+            console.log('[Dashboard] Disconnected from server');
+            updateConnectionStatus(false);
+            startAutoRefresh();
+        });
+
+        // Listen for 'new_alert' events and ADD TO TOP of table
+        socket.on('new_alert', (alert) => {
+            console.log('[Dashboard] New alert via SocketIO:', alert);
+            // Only add if we have an initial load already
+            if (state.initialLoadComplete) {
+                addAlert(alert);
+                updateStats();
+            }
+        });
+
+        socket.on('stats_update', (stats) => {
+            console.log('[Dashboard] Stats update:', stats);
+            updateStats(stats);
+        });
+
+        socket.on('error', (error) => {
+            console.error('[Dashboard] Socket error:', error);
+        });
+
+        // =====================================
+        // Connection Status
+        // =====================================
+
+        function updateConnectionStatus(isConnected) {
+            state.connected = isConnected;
+            const dot = document.getElementById('status-dot');
+            const text = document.getElementById('status-text');
+
+            if (isConnected) {
+                dot.classList.add('connected');
+                text.textContent = 'Connected';
+                stopAutoRefresh();
+            } else {
+                dot.classList.remove('connected');
+                text.textContent = 'Disconnected';
+                startAutoRefresh();
+            }
+        }
+
+        // =====================================
+        // Auto Refresh Fallback
+        // =====================================
+
+        let autoRefreshTimer = null;
+
+        function startAutoRefresh() {
+            if (autoRefreshTimer) return;
+            console.log('[Dashboard] Starting auto-refresh fallback');
+            autoRefreshTimer = setInterval(() => {
+                if (!state.connected) {
+                    console.log('[Dashboard] Auto-refreshing alerts (no SocketIO)');
+                    loadAlertsFromAPI();
+                }
+            }, config.autoRefreshInterval);
+        }
+
+        function stopAutoRefresh() {
+            if (autoRefreshTimer) {
+                clearInterval(autoRefreshTimer);
+                autoRefreshTimer = null;
+                console.log('[Dashboard] Stopped auto-refresh');
+            }
+        }
+
+        // =====================================
+        // Alert Loading from Database
+        // =====================================
+
+        function loadAlertsFromAPI() {
+            console.log('[Dashboard] Fetching alerts from API...');
+            fetch('/api/alerts?limit=100&hours=24')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`API returned ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('[Dashboard] Successfully loaded', data.alerts?.length || 0, 'alerts from database');
+                    
+                    // Replace state with fresh database data
+                    state.alerts = data.alerts || [];
+                    
+                    // Recalculate canaries and attackers from all alerts
+                    state.canaries.clear();
+                    state.attackers.clear();
+                    
+                    state.alerts.forEach(alert => {
+                        if (alert.canary_name) {
+                            state.canaries.set(alert.canary_name, (state.canaries.get(alert.canary_name) || 0) + 1);
+                        }
+                        if (alert.attacker_ip) {
+                            state.attackers.add(alert.attacker_ip);
+                        }
+                    });
+                    
+                    // Render UI with database alerts
+                    renderAlerts();
+                    updateCanaryGrid();
+                    updateStats({ db: { total: data.total } });
+                    
+                    // Mark initial load as complete
+                    state.initialLoadComplete = true;
+                    console.log('[Dashboard] Initial load complete, ready for real-time updates');
+                })
+                .catch(error => {
+                    console.error('[Dashboard] Error loading alerts from API:', error);
+                    state.initialLoadComplete = true; // Still mark complete even on error
+                });
+        }
+
+        function addAlert(alert) {
+            console.log('[Dashboard] Adding new real-time alert:', alert);
+            
+            // Add to beginning (TOP of table) for new real-time alerts
+            state.alerts.unshift(alert);
+
+            // Keep only latest N alerts
+            if (state.alerts.length > config.maxAlerts) {
+                state.alerts = state.alerts.slice(0, config.maxAlerts);
+            }
+
+            // Update tracking maps
+            if (alert.canary_name) {
+                state.canaries.set(alert.canary_name, (state.canaries.get(alert.canary_name) || 0) + 1);
+            }
+            if (alert.attacker_ip) {
+                state.attackers.add(alert.attacker_ip);
+            }
+
+            // Re-render with new alert at top
+            renderAlerts();
+            updateCanaryGrid();
+        }
+
+        // =====================================
+        // Alert Rendering
+        // =====================================
+
+        function renderAlerts() {
+            const tbody = document.getElementById('alerts-tbody');
+            const alerts = state.alerts;
+
+            if (alerts.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Waiting for alerts...</td></tr>';
+                return;
+            }
+
+            const rows = alerts.map((alert, index) => {
+                const service = getServiceType(alert.canary_name);
+                const timestamp = formatTime(alert.timestamp);
+                const canary = escapeHtml(alert.canary_name || 'UNKNOWN');
+                const attacker = escapeHtml(alert.attacker_ip || 'UNKNOWN');
+                const port = escapeHtml(String(alert.port || '?'));
+                const behavior = escapeHtml(String(alert.behavior || 'N/A').substring(0, 50));
+                const status = alert.acknowledged ? 'Acknowledged' : 'Pending';
+                const statusClass = alert.acknowledged ? 'acknowledged' : '';
+
+                return `
+                    <tr class="service-${service} ${index === 0 ? 'alert-new' : ''}">
+                        <td class="time-col">${timestamp}</td>
+                        <td class="canary-col">${canary}</td>
+                        <td class="ip-col">${attacker}</td>
+                        <td class="port-col">${port}</td>
+                        <td class="behavior-col">${behavior}</td>
+                        <td><span class="status-badge-cell ${statusClass}">${status}</span></td>
+                    </tr>
+                `;
+            }).join('');
+
+            tbody.innerHTML = rows;
+            console.log('[Dashboard] Rendered', alerts.length, 'alerts in table');
+        }
+
+        // =====================================
+        // Canary Grid
+        // =====================================
+
+        function updateCanaryGrid() {
+            const grid = document.getElementById('canary-grid');
+
+            if (state.canaries.size === 0) {
+                grid.innerHTML = '<div class="empty-state" style="font-size: 12px;">No canaries triggered</div>';
+                return;
+            }
+
+            const canaryEntries = Array.from(state.canaries.entries())
+                .sort((a, b) => b[1] - a[1]) // Sort by count descending
+                .slice(0, 10); // Top 10
+
+            const html = canaryEntries.map(([name, count]) => {
+                const triggered = count > 0;
+                return `
+                    <div class="canary-node ${triggered ? 'triggered' : ''}">
+                        <span class="canary-name">🎯 ${escapeHtml(name)}</span>
+                        <div class="canary-counter ${!triggered ? 'idle' : ''}">${count}</div>
+                    </div>
+                `;
+            }).join('');
+
+            grid.innerHTML = html;
+        }
+
+        // =====================================
+        // Statistics
+        // =====================================
+
+        function updateStats(stats) {
+            try {
+                // Check if we have any alerts
+                const hasAlerts = state.alerts.length > 0;
+
+                // Total alerts
+                const total = (stats && stats.db && stats.db.total) ? stats.db.total : state.alerts.length;
+                document.getElementById('stat-total-alerts').textContent = total;
+
+                // Active attackers - show 0 if no alerts
+                document.getElementById('stat-active-attackers').textContent = hasAlerts ? state.attackers.size : 0;
+
+                // Most triggered canary - show "—" if no alerts
+                if (state.canaries.size > 0) {
+                    const mostTriggered = Array.from(state.canaries.entries())
+                        .sort((a, b) => b[1] - a[1])[0];
+                    document.getElementById('stat-most-triggered').textContent = escapeHtml(mostTriggered[0]);
+                } else {
+                    document.getElementById('stat-most-triggered').textContent = '—';
+                }
+
+                // Alerts last hour
+                const oneHourAgo = new Date(Date.now() - 3600000);
+                const lastHourCount = state.alerts.filter(a => {
+                    try {
+                        const alertTime = new Date(a.timestamp);
+                        return alertTime >= oneHourAgo;
+                    } catch {
+                        return false;
+                    }
+                }).length;
+                document.getElementById('stat-last-hour').textContent = lastHourCount;
+
+                // ========================================
+                // Attack Summary Section
+                // ========================================
+
+                // Top attacker - show "—" if no alerts
+                if (hasAlerts) {
+                    const attackerCounts = {};
+                    state.alerts.forEach(alert => {
+                        if (alert.attacker_ip) {
+                            attackerCounts[alert.attacker_ip] = (attackerCounts[alert.attacker_ip] || 0) + 1;
+                        }
+                    });
+                    const topAttackerEntry = Object.entries(attackerCounts)
+                        .sort((a, b) => b[1] - a[1])[0];
+                    if (topAttackerEntry) {
+                        document.getElementById('info-top-attacker').textContent = escapeHtml(topAttackerEntry[0]);
+                    } else {
+                        document.getElementById('info-top-attacker').textContent = '—';
+                    }
+                } else {
+                    document.getElementById('info-top-attacker').textContent = '—';
+                }
+
+                // Most common service - show "—" if no alerts
+                if (hasAlerts) {
+                    const serviceCount = {};
+                    state.alerts.forEach(alert => {
+                        const service = getServiceType(alert.canary_name);
+                        serviceCount[service] = (serviceCount[service] || 0) + 1;
+                    });
+                    const mostCommon = Object.entries(serviceCount)
+                        .sort((a, b) => b[1] - a[1])[0];
+                    if (mostCommon) {
+                        document.getElementById('info-common-service').textContent = mostCommon[0].toUpperCase();
+                    } else {
+                        document.getElementById('info-common-service').textContent = '—';
+                    }
+                } else {
+                    document.getElementById('info-common-service').textContent = '—';
+                }
+
+                // Session alerts - show "0" if no alerts
+                document.getElementById('info-session-alerts').textContent = hasAlerts ? state.alerts.length : 0;
+
+                // Last alert - show "—" if no alerts
+                if (hasAlerts && state.alerts.length > 0) {
+                    document.getElementById('info-last-alert').textContent = formatTime(state.alerts[0].timestamp);
+                } else {
+                    document.getElementById('info-last-alert').textContent = '—';
+                }
+            } catch (error) {
+                console.error('[Dashboard] Error updating stats:', error);
+            }
+        }
+
+        // =====================================
+        // Utility Functions
+        // =====================================
+
+        function getServiceType(canaryName) {
+            if (!canaryName) return 'unknown';
+            const name = canaryName.toLowerCase();
+            if (name.includes('ssh')) return 'ssh';
+            if (name.includes('ftp')) return 'ftp';
+            if (name.includes('http')) return 'http';
+            if (name.includes('smb')) return 'smb';
+            return 'unknown';
+        }
+
+        function formatTime(isoString) {
+            try {
+                const date = new Date(isoString);
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                const seconds = String(date.getSeconds()).padStart(2, '0');
+                return `${hours}:${minutes}:${seconds}`;
+            } catch {
+                return isoString || 'N/A';
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // =====================================
+        // Initialization
+        // =====================================
+
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('[Dashboard] Page loaded - fetching initial alerts from database');
+            updateConnectionStatus(false);
+            // Immediately fetch all existing alerts from database
+            loadAlertsFromAPI();
+        });
+
+        // Request stats periodically
+        setInterval(() => {
+            if (state.connected) {
+                socket.emit('request_stats');
+            }
+        }, 5000);
+    </script>
+</body>
+</html>

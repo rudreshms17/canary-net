@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+*.pyc
+alerts.db
+canary.key
+.pytest_cache/
+*.log
