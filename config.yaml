@@ -1,56 +1,23 @@
-# Canary-Net Configuration
-# Central monitoring and alerting system for honeypot networks
-# 
-# This configuration file defines:
-# - Monitor server (alert receiver) host/port
-# - UDP broadcast port for secondary alert channel
-# - Flask dashboard port
-# - Encryption key and database paths
-# - Honeypot canary services (SSH, FTP, HTTP, SMB)
-
-# Monitor Server Configuration
-# Listens for encrypted alerts from canary services on TCP
 monitor:
-  host: 0.0.0.0      # Listen on all interfaces
-  port: 9999         # TCP alert receiver port
-
-# UDP Broadcast Port
-# Secondary fire-and-forget alert channel with b'CARY' magic header
+  host: 127.0.0.1
+  port: 9999
 broadcast_port: 9998
-
-# Dashboard Port
-# Flask web dashboard with SocketIO real-time updates
 dashboard_port: 5000
-
-# Encryption Key Path
-# Fernet symmetric key for alert encryption/decryption
 key_path: ./canary.key
-
-# Database Path
-# SQLAlchemy SQLite database for persistent alert storage
 db_path: ./alerts.db
-
-# Honeypot Canary Services
 canaries:
-  # FTP Honeypot (Port 21)
   ftp:
     enabled: true
     port: 21
     name: PROD-FTP-01
-
-  # SSH Honeypot (Port 22)
   ssh:
     enabled: true
-    port: 22
+    port: 2222
     name: PROD-SSH-01
-
-  # HTTP Honeypot (Port 8080)
   http:
     enabled: true
     port: 8080
     name: PROD-WEB-01
-
-  # SMB Honeypot (Port 4450)
   smb:
     enabled: true
     port: 4450

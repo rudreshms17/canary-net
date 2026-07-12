@@ -137,6 +137,23 @@ class TestCanaryDBSaveAlert:
         
         assert db.get_alert_count() == 5
 
+    def test_save_duplicate_alert_is_ignored(self, db):
+        """Test saving the same alert twice does not create duplicates"""
+        alert_id = str(uuid4())
+        alert = {
+            "alert_id": alert_id,
+            "canary_name": "SSH-01",
+            "port": 2222,
+            "attacker_ip": "192.168.1.100",
+            "attacker_port": 12345,
+            "behavior": "ssh_password_attempt",
+            "timestamp": datetime.utcnow().isoformat() + "Z"
+        }
+
+        assert db.save_alert(alert) is True
+        assert db.save_alert(alert) is True
+        assert db.get_alert_count() == 1
+
 
 class TestCanaryDBGetAllAlerts:
     """Test get_all_alerts method"""

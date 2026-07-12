@@ -38,7 +38,7 @@ class TCPDispatcher:
         self.lock = threading.Lock()
         self.connected = False
         
-        logger.info(
+        logger.debug(
             f"[TCPDispatcher] Initialized with monitor at {host}:{port}"
         )
     
@@ -58,16 +58,20 @@ class TCPDispatcher:
             
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.settimeout(5)  # 5 second timeout
+
+            connect_host = self.host
+            if connect_host == "0.0.0.0":
+                connect_host = "127.0.0.1"
             
             logger.debug(
-                f"[TCPDispatcher] Connecting to {self.host}:{self.port}..."
+                f"[TCPDispatcher] Connecting to {connect_host}:{self.port}..."
             )
             
-            self.socket.connect((self.host, self.port))
+            self.socket.connect((connect_host, self.port))
             self.connected = True
             
-            logger.info(
-                f"[TCPDispatcher] Connected to monitor at {self.host}:{self.port}"
+            logger.debug(
+                f"[TCPDispatcher] Connected to monitor at {connect_host}:{self.port}"
             )
             
             return True

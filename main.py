@@ -17,7 +17,7 @@ init(autoreset=True)
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -83,12 +83,22 @@ def generate_encryption_key(cfg):
     print(f"{Fore.GREEN}[+] Encryption key generated and saved to {key_path}{Style.RESET_ALL}")
 
 
-def initialize_database(cfg):
+def initialize_database(cfg, args):
     """Initialize database"""
     from shared.db import CanaryDB
     
     db_path = cfg.get_db_path()
     print(f"{Fore.CYAN}[*] Initializing database at {db_path}...{Style.RESET_ALL}")
+
+    if args.fresh:
+        try:
+            import os
+            if os.path.exists(db_path):
+                os.remove(db_path)
+                print("[+] Old database deleted")
+            print("[+] Fresh start — clean database")
+        except Exception as e:
+            print(f"[-] Could not delete database: {e}")
     
     db = CanaryDB(db_path)
     ACTIVE_SERVICES['database'] = db
@@ -330,6 +340,11 @@ Examples:
     parser.add_argument('--monitor-only', action='store_true', help='Start monitor server and UDP listener only')
     parser.add_argument('--canaries-only', action='store_true', help='Start canaries only')
     parser.add_argument('--no-dashboard', action='store_true', help='Skip dashboard startup')
+    parser.add_argument(
+        '--fresh',
+        action='store_true',
+        help='Clear all alerts on startup'
+    )
     
     args = parser.parse_args()
     
@@ -362,7 +377,7 @@ Examples:
     
     try:
         # Initialize core services
-        db = initialize_database(cfg)
+        db = initialize_database(cfg, args)
         crypto = initialize_crypto(cfg)
         alert_manager = start_alert_manager(db, crypto)
         

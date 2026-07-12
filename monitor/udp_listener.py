@@ -50,7 +50,7 @@ class UDPListener:
         self.packets_invalid = 0
         self.packets_decryption_failed = 0
         
-        logger.info(f"[UDPListener] Initialized on port {port}")
+        logger.debug(f"[UDPListener] Initialized on port {port}")
     
     def start(self):
         """

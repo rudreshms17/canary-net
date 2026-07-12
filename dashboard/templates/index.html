@@ -90,6 +90,11 @@
             margin-bottom: 30px;
         }
 
+        .stat-card.critical { border-color: rgba(239, 68, 68, 0.5); }
+        .stat-card.high { border-color: rgba(245, 158, 11, 0.5); }
+        .stat-card.warning { border-color: rgba(234, 179, 8, 0.5); }
+        .stat-card.info { border-color: rgba(16, 185, 129, 0.5); }
+
         .stat-card {
             background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
             border: 1px solid var(--border-color);
@@ -260,6 +265,49 @@
             font-style: italic;
         }
 
+        .threat-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .threat-badge.critical {
+            background: rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+        }
+
+        .threat-badge.high {
+            background: rgba(245, 158, 11, 0.2);
+            color: #fcd34d;
+        }
+
+        .threat-badge.warning {
+            background: rgba(234, 179, 8, 0.2);
+            color: #fde68a;
+        }
+
+        .threat-badge.info {
+            background: rgba(16, 185, 129, 0.2);
+            color: #a7f3d0;
+        }
+
+        .geo-table {
+            width: 100%;
+            margin-top: 12px;
+            border-collapse: collapse;
+        }
+
+        .geo-table th,
+        .geo-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border-color);
+            text-align: left;
+        }
+
         /* Live Intrusion Map */
         .intrusion-map-section {
             background: var(--bg-secondary);
@@ -418,21 +466,21 @@
 
         <!-- Stats Bar -->
         <div class="stats-bar">
-            <div class="stat-card">
-                <div class="stat-label">Total Alerts</div>
+            <div class="stat-card info">
+                <div class="stat-label">Total Alerts Today</div>
                 <div class="stat-value" id="stat-total-alerts">0</div>
             </div>
-            <div class="stat-card">
-                <div class="stat-label">Active Attackers</div>
-                <div class="stat-value" id="stat-active-attackers">0</div>
+            <div class="stat-card critical">
+                <div class="stat-label">Critical</div>
+                <div class="stat-value" id="stat-critical">0</div>
             </div>
-            <div class="stat-card">
-                <div class="stat-label">Most Triggered</div>
-                <div class="stat-value" id="stat-most-triggered" style="font-size: 16px;">—</div>
+            <div class="stat-card high">
+                <div class="stat-label">High</div>
+                <div class="stat-value" id="stat-high">0</div>
             </div>
-            <div class="stat-card">
-                <div class="stat-label">Alerts Last Hour</div>
-                <div class="stat-value" id="stat-last-hour">0</div>
+            <div class="stat-card warning">
+                <div class="stat-label">Warning</div>
+                <div class="stat-value" id="stat-warning">0</div>
             </div>
         </div>
 
@@ -449,7 +497,10 @@
                                 <th>Canary</th>
                                 <th>Attacker IP</th>
                                 <th>Port</th>
+                                <th>Threat Level</th>
                                 <th>Behavior</th>
+                                <th>Location</th>
+                                <th>Proxy</th>
                                 <th>Status</th>
                             </tr>
                         </thead>
@@ -492,6 +543,21 @@
                     <div class="info-value" id="info-last-alert">—</div>
                 </div>
             </div>
+        </div>
+
+        <div class="full-width-section">
+            <h2 class="section-title">🌍 Country Attack Stats</h2>
+            <table class="geo-table">
+                <thead>
+                    <tr>
+                        <th>Country</th>
+                        <th>Attack Count</th>
+                    </tr>
+                </thead>
+                <tbody id="geo-stats-tbody">
+                    <tr><td colspan="2" class="empty-state">Loading country stats...</td></tr>
+                </tbody>
+            </table>
         </div>
     </div>
 
@@ -680,7 +746,7 @@
             const alerts = state.alerts;
 
             if (alerts.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Waiting for alerts...</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" class="empty-state">Waiting for alerts...</td></tr>';
                 return;
             }
 
@@ -690,7 +756,13 @@
                 const canary = escapeHtml(alert.canary_name || 'UNKNOWN');
                 const attacker = escapeHtml(alert.attacker_ip || 'UNKNOWN');
                 const port = escapeHtml(String(alert.port || '?'));
+                const threatLevel = (alert.threat_level || 'INFO').toUpperCase();
+                const threatBadgeClass = threatLevel.toLowerCase();
                 const behavior = escapeHtml(String(alert.behavior || 'N/A').substring(0, 50));
+                const location = escapeHtml(
+                    (alert.geo_city && alert.geo_country) ? `${alert.geo_city}, ${alert.geo_country}` : (alert.geo_country || 'Unknown')
+                );
+                const proxy = alert.is_tor ? 'Tor' : (alert.is_proxy ? 'Proxy' : 'Clean');
                 const status = alert.acknowledged ? 'Acknowledged' : 'Pending';
                 const statusClass = alert.acknowledged ? 'acknowledged' : '';
 
@@ -700,7 +772,10 @@
                         <td class="canary-col">${canary}</td>
                         <td class="ip-col">${attacker}</td>
                         <td class="port-col">${port}</td>
+                        <td><span class="threat-badge ${threatBadgeClass}">${threatLevel}</span></td>
                         <td class="behavior-col">${behavior}</td>
+                        <td class="behavior-col">${location}</td>
+                        <td class="behavior-col">${proxy}</td>
                         <td><span class="status-badge-cell ${statusClass}">${status}</span></td>
                     </tr>
                 `;
@@ -745,42 +820,14 @@
 
         function updateStats(stats) {
             try {
-                // Check if we have any alerts
                 const hasAlerts = state.alerts.length > 0;
 
-                // Total alerts
                 const total = (stats && stats.db && stats.db.total) ? stats.db.total : state.alerts.length;
                 document.getElementById('stat-total-alerts').textContent = total;
+                document.getElementById('stat-critical').textContent = state.alerts.filter(a => (a.threat_level || 'INFO').toUpperCase() === 'CRITICAL').length;
+                document.getElementById('stat-high').textContent = state.alerts.filter(a => (a.threat_level || 'INFO').toUpperCase() === 'HIGH').length;
+                document.getElementById('stat-warning').textContent = state.alerts.filter(a => (a.threat_level || 'INFO').toUpperCase() === 'WARNING').length;
 
-                // Active attackers - show 0 if no alerts
-                document.getElementById('stat-active-attackers').textContent = hasAlerts ? state.attackers.size : 0;
-
-                // Most triggered canary - show "—" if no alerts
-                if (state.canaries.size > 0) {
-                    const mostTriggered = Array.from(state.canaries.entries())
-                        .sort((a, b) => b[1] - a[1])[0];
-                    document.getElementById('stat-most-triggered').textContent = escapeHtml(mostTriggered[0]);
-                } else {
-                    document.getElementById('stat-most-triggered').textContent = '—';
-                }
-
-                // Alerts last hour
-                const oneHourAgo = new Date(Date.now() - 3600000);
-                const lastHourCount = state.alerts.filter(a => {
-                    try {
-                        const alertTime = new Date(a.timestamp);
-                        return alertTime >= oneHourAgo;
-                    } catch {
-                        return false;
-                    }
-                }).length;
-                document.getElementById('stat-last-hour').textContent = lastHourCount;
-
-                // ========================================
-                // Attack Summary Section
-                // ========================================
-
-                // Top attacker - show "—" if no alerts
                 if (hasAlerts) {
                     const attackerCounts = {};
                     state.alerts.forEach(alert => {
@@ -790,16 +837,11 @@
                     });
                     const topAttackerEntry = Object.entries(attackerCounts)
                         .sort((a, b) => b[1] - a[1])[0];
-                    if (topAttackerEntry) {
-                        document.getElementById('info-top-attacker').textContent = escapeHtml(topAttackerEntry[0]);
-                    } else {
-                        document.getElementById('info-top-attacker').textContent = '—';
-                    }
+                    document.getElementById('info-top-attacker').textContent = topAttackerEntry ? escapeHtml(topAttackerEntry[0]) : '—';
                 } else {
                     document.getElementById('info-top-attacker').textContent = '—';
                 }
 
-                // Most common service - show "—" if no alerts
                 if (hasAlerts) {
                     const serviceCount = {};
                     state.alerts.forEach(alert => {
@@ -808,19 +850,13 @@
                     });
                     const mostCommon = Object.entries(serviceCount)
                         .sort((a, b) => b[1] - a[1])[0];
-                    if (mostCommon) {
-                        document.getElementById('info-common-service').textContent = mostCommon[0].toUpperCase();
-                    } else {
-                        document.getElementById('info-common-service').textContent = '—';
-                    }
+                    document.getElementById('info-common-service').textContent = mostCommon ? mostCommon[0].toUpperCase() : '—';
                 } else {
                     document.getElementById('info-common-service').textContent = '—';
                 }
 
-                // Session alerts - show "0" if no alerts
                 document.getElementById('info-session-alerts').textContent = hasAlerts ? state.alerts.length : 0;
 
-                // Last alert - show "—" if no alerts
                 if (hasAlerts && state.alerts.length > 0) {
                     document.getElementById('info-last-alert').textContent = formatTime(state.alerts[0].timestamp);
                 } else {
@@ -829,6 +865,39 @@
             } catch (error) {
                 console.error('[Dashboard] Error updating stats:', error);
             }
+        }
+
+        function loadDailyStats() {
+            fetch('/api/stats')
+                .then(response => response.ok ? response.json() : null)
+                .then(data => {
+                    if (!data) return;
+                    document.getElementById('stat-total-alerts').textContent = data.total_today || 0;
+                    document.getElementById('stat-critical').textContent = data.critical || 0;
+                    document.getElementById('stat-high').textContent = data.high || 0;
+                    document.getElementById('stat-warning').textContent = data.warning || 0;
+                })
+                .catch(error => console.error('[Dashboard] Error loading daily stats:', error));
+        }
+
+        function loadGeoStats() {
+            fetch('/api/geo/stats')
+                .then(response => response.ok ? response.json() : null)
+                .then(data => {
+                    const tbody = document.getElementById('geo-stats-tbody');
+                    if (!data || !data.country_stats || data.country_stats.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="2" class="empty-state">No country data available</td></tr>';
+                        return;
+                    }
+
+                    tbody.innerHTML = data.country_stats.map(item => `
+                        <tr>
+                            <td>${escapeHtml(item.country || 'Unknown')}</td>
+                            <td>${item.count || 0}</td>
+                        </tr>
+                    `).join('');
+                })
+                .catch(error => console.error('[Dashboard] Error loading geo stats:', error));
         }
 
         // =====================================
@@ -870,6 +939,8 @@
         document.addEventListener('DOMContentLoaded', () => {
             console.log('[Dashboard] Page loaded - fetching initial alerts from database');
             updateConnectionStatus(false);
+            loadDailyStats();
+            loadGeoStats();
             // Immediately fetch all existing alerts from database
             loadAlertsFromAPI();
         });

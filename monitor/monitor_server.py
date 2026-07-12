@@ -12,6 +12,9 @@ from colorama import Fore, Back, Style, init
 
 from shared.crypto import AlertCrypto, CanaryCryptoError
 from shared.db import AlertDatabase
+from shared.threat_scorer import ThreatScorer
+
+scorer = ThreatScorer()
 
 # Initialize colorama
 init(autoreset=True)
@@ -63,7 +66,7 @@ class MonitorServer:
         self.alerts_invalid = 0
         self.alerts_decryption_failed = 0
         
-        logger.info(f"[MonitorServer] Initialized on {host}:{port}")
+        logger.debug(f"[MonitorServer] Initialized on {host}:{port}")
     
     def start(self):
         """
@@ -220,6 +223,11 @@ class MonitorServer:
                 )
                 return
             
+            score = scorer.score(alert)
+            level = scorer.get_threat_level(score)
+            alert["threat_score"] = score
+            alert["threat_level"] = level
+
             # Save to database
             try:
                 self.db.log_alert(alert)

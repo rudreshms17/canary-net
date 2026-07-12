@@ -36,7 +36,7 @@ class UDPBroadcaster:
         self.socket: Optional[socket.socket] = None
         self._init_socket()
         
-        logger.info(
+        logger.debug(
             f"[UDPBroadcaster] Initialized for broadcast on port {port}"
         )
     
@@ -108,7 +108,7 @@ class UDPBroadcaster:
             # Send via UDP broadcast (non-blocking, best-effort)
             self.socket.sendto(message, ('255.255.255.255', self.port))
             
-            logger.info(
+            logger.debug(
                 f"[UDPBroadcaster] ✓ Alert broadcast successfully "
                 f"on port {self.port}: "
                 f"{alert.get('canary_name', 'unknown')} - "

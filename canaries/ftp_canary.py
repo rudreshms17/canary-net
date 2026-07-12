@@ -41,6 +41,10 @@ class PermissiveAuthorizer(DummyAuthorizer):
         # Always return False to reject the login, but we've already logged it
         return False
 
+    def get_home_dir(self, username):
+        """Return a safe fallback home directory for unknown users."""
+        return "/"
+
 
 class FakeFTPFS(AbstractedFS):
     """Fake filesystem for FTP server with honeypot files"""

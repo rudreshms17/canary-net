@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from collections import defaultdict, Counter
 
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, Text, Index
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, Text, Index, Float, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.sql import func
@@ -35,7 +35,18 @@ class Alert(Base):
     port = Column(Integer, nullable=True)
     attacker_ip = Column(String(45), nullable=False, index=True)  # IPv6 support
     attacker_port = Column(Integer, nullable=True)
-    behavior = Column(Text, nullable=True)  # JSON-serialized behavior
+    behavior = Column(Text, nullable=True, default='UNKNOWN')
+    threat_score = Column(Integer, nullable=False, default=0)
+    threat_level = Column(Text, nullable=True, default='INFO')
+    is_proxy = Column(Integer, nullable=False, default=0)
+    is_tor = Column(Integer, nullable=False, default=0)
+    is_datacenter = Column(Integer, nullable=False, default=0)
+    geo_country = Column(Text, nullable=True)
+    geo_country_code = Column(Text, nullable=True)
+    geo_city = Column(Text, nullable=True)
+    geo_lat = Column(Float, nullable=True)
+    geo_lon = Column(Float, nullable=True)
+    geo_isp = Column(Text, nullable=True)
     timestamp = Column(DateTime, nullable=False, index=True)
     fake_data_touched = Column(Text, nullable=True, default='false')
     acknowledged = Column(Boolean, default=False, nullable=False, index=True)
@@ -50,6 +61,17 @@ class Alert(Base):
             'attacker_ip': self.attacker_ip,
             'attacker_port': self.attacker_port,
             'behavior': self.behavior,
+            'threat_score': self.threat_score,
+            'threat_level': self.threat_level,
+            'is_proxy': self.is_proxy,
+            'is_tor': self.is_tor,
+            'is_datacenter': self.is_datacenter,
+            'geo_country': self.geo_country,
+            'geo_country_code': self.geo_country_code,
+            'geo_city': self.geo_city,
+            'geo_lat': self.geo_lat,
+            'geo_lon': self.geo_lon,
+            'geo_isp': self.geo_isp,
             'timestamp': self.timestamp.isoformat() + 'Z' if self.timestamp else None,
             'fake_data_touched': self.fake_data_touched,
             'acknowledged': self.acknowledged
@@ -81,12 +103,54 @@ class CanaryDB:
         
         # Create tables
         Base.metadata.create_all(bind=self.engine)
+        self._migrate_schema()
         
-        logger.info(f"[CanaryDB] Initialized at {self.db_path}")
+        logger.debug(f"[CanaryDB] Initialized at {self.db_path}")
+
+    def _migrate_schema(self) -> None:
+        """Add any missing alert columns for existing SQLite databases."""
+        try:
+            with self.engine.connect() as connection:
+                existing_columns = {
+                    row[1]
+                    for row in connection.execute(text("PRAGMA table_info(alerts)")).fetchall()
+                }
+
+                for column_name, definition in [
+                    ("threat_score", "INTEGER DEFAULT 0"),
+                    ("threat_level", "TEXT DEFAULT 'INFO'"),
+                    ("behavior", "TEXT DEFAULT 'UNKNOWN'"),
+                    ("is_proxy", "INTEGER DEFAULT 0"),
+                    ("is_tor", "INTEGER DEFAULT 0"),
+                    ("is_datacenter", "INTEGER DEFAULT 0"),
+                    ("geo_country", "TEXT"),
+                    ("geo_country_code", "TEXT"),
+                    ("geo_city", "TEXT"),
+                    ("geo_lat", "REAL"),
+                    ("geo_lon", "REAL"),
+                    ("geo_isp", "TEXT"),
+                ]:
+                    if column_name not in existing_columns:
+                        connection.execute(text(f"ALTER TABLE alerts ADD COLUMN {column_name} {definition}"))
+
+                connection.commit()
+        except Exception as e:
+            logger.error(f"[CanaryDB] Failed to migrate alert schema: {e}", exc_info=True)
     
     def _get_session(self) -> Session:
         """Get database session"""
         return self.SessionLocal()
+
+    def clear_all_alerts(self) -> None:
+        """Delete all alerts from the database."""
+        with self._lock:
+            session = self._get_session()
+            try:
+                session.execute(text("DELETE FROM alerts"))
+                session.commit()
+                print("[CanaryDB] All alerts cleared")
+            finally:
+                session.close()
     
     def save_alert(self, alert: Dict[str, Any]) -> bool:
         """
@@ -103,6 +167,16 @@ class CanaryDB:
         try:
             with self._lock:
                 session = self._get_session()
+                alert_id = alert.get('alert_id')
+
+                if not alert_id:
+                    logger.warning("[CanaryDB] Skipping alert without alert_id")
+                    return False
+
+                existing = session.query(Alert).filter_by(alert_id=alert_id).first()
+                if existing:
+                    logger.debug(f"[CanaryDB] Duplicate alert skipped: {alert_id}")
+                    return True
                 
                 # Parse timestamp if it's a string
                 timestamp = alert.get('timestamp')
@@ -113,12 +187,23 @@ class CanaryDB:
                 
                 # Create alert record
                 alert_record = Alert(
-                    alert_id=alert.get('alert_id'),
+                    alert_id=alert_id,
                     canary_name=alert.get('canary_name'),
                     port=alert.get('port'),
                     attacker_ip=alert.get('attacker_ip'),
                     attacker_port=alert.get('attacker_port'),
-                    behavior=alert.get('behavior'),
+                    behavior=alert.get('behavior', 'UNKNOWN'),
+                    threat_score=int(alert.get('threat_score', 0) or 0),
+                    threat_level=str(alert.get('threat_level', 'INFO')),
+                    is_proxy=int(alert.get('is_proxy', 0) or 0),
+                    is_tor=int(alert.get('is_tor', 0) or 0),
+                    is_datacenter=int(alert.get('is_datacenter', 0) or 0),
+                    geo_country=alert.get('geo_country'),
+                    geo_country_code=alert.get('geo_country_code'),
+                    geo_city=alert.get('geo_city'),
+                    geo_lat=alert.get('geo_lat'),
+                    geo_lon=alert.get('geo_lon'),
+                    geo_isp=alert.get('geo_isp'),
                     timestamp=timestamp or datetime.utcnow(),
                     fake_data_touched=str(alert.get('fake_data_touched', 'false')).lower(),
                     acknowledged=False
@@ -416,7 +501,7 @@ class CanaryDB:
         """Close database connection"""
         try:
             self.engine.dispose()
-            logger.info("[CanaryDB] Database closed")
+            logger.debug("[CanaryDB] Database closed")
         except Exception as e:
             logger.error(f"[CanaryDB] Error closing database: {e}")
 

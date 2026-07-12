@@ -80,7 +80,7 @@ class AlertManager:
         self.udp_sent = 0
         self.db_logged = 0
         
-        logger.info(
+        logger.debug(
             "[AlertManager] Initialized with "
             f"TCP={self.tcp_dispatcher is not None}, "
             f"UDP={self.udp_broadcaster is not None}"
@@ -162,7 +162,7 @@ class AlertManager:
                         f"[AlertManager] Database logging failed for alert {alert_id}"
                     )
                 
-                logger.info(
+                logger.debug(
                     f"[AlertManager] ✓ Alert processed: {alert_id} "
                     f"from {alert.get('canary_name')} "
                     f"({alert.get('attacker_ip')})"

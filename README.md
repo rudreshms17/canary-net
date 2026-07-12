@@ -1,237 +1,115 @@
-# Canary-Net: Distributed Honeypot Network Monitor
+# Canary-Net
 
-A distributed honeypot monitoring system that deploys fake services (canaries) across a network, detects unauthorized access attempts, and alerts a central monitoring station with encrypted alert transmission.
+Canary-Net is a lightweight honeypot monitoring platform that runs fake network services, captures suspicious activity, enriches alerts with behavioral context, and presents them through a real-time dashboard.
 
-## Project Overview
+## What it does
 
-**Canary-Net** is a Python-based security monitoring framework consisting of:
+The project combines:
 
-- **Canaries**: Fake service listeners (SSH, FTP, HTTP) that mimic real services to detect reconnaissance and attack attempts
-- **Alert Engine**: Encrypts and dispatches security alerts using AES-256-GCM
-- **Central Monitor**: Aggregates and processes alerts from all canary services
-- **Dashboard**: Real-time web UI for viewing alerts and security events
-- **Shared Modules**: Common cryptographic utilities and data models
+- Honeypot canaries for SSH, FTP, HTTP, and SMB-style interactions
+- A monitor service that receives and validates alerts
+- An alert pipeline with encryption, dispatch, and SQLite persistence
+- A Flask + Socket.IO dashboard for live alert viewing
+- Threat enrichment modules for scoring, proxy detection, behavior classification, and GeoIP context
 
-## Architecture
+## Project layout
 
-```
-┌─────────────────────────────────────────────┐
-│         Canary Services                     │
-│  (SSH, FTP, HTTP on alternate ports)        │
-└──────────────────┬──────────────────────────┘
-                   │ (encrypted alerts)
-┌──────────────────▼──────────────────────────┐
-│      Alert Engine                           │
-│  (Encryption + Dispatch)                    │
-└──────────────────┬──────────────────────────┘
-                   │
-┌──────────────────▼──────────────────────────┐
-│    Central Monitor Server                   │
-│  (Alert aggregation & processing)           │
-└──────────────────┬──────────────────────────┘
-                   │
-┌──────────────────▼──────────────────────────┐
-│    Dashboard (Flask + SocketIO)             │
-│  (Real-time alert visualization)            │
-└─────────────────────────────────────────────┘
-```
+- [main.py](main.py) - startup entry point and service orchestration
+- [config.yaml](config.yaml) - runtime configuration for ports, canaries, and paths
+- [canaries/](canaries/) - fake services that emit alerts when probed or attacked
+- [alert_engine/](alert_engine/) - alert dispatch, encryption, and UDP/TCP transport
+- [monitor/](monitor/) - monitor and listener services
+- [dashboard/](dashboard/) - Flask dashboard UI and API endpoints
+- [shared/](shared/) - database, crypto, configuration, threat scoring, and enrichment helpers
+- [tests/](tests/) - unit and integration tests
 
-## Project Structure
+## Features
 
-```
-canary-net/
-├── canaries/              # Honeypot services
-│   ├── __init__.py
-│   ├── ssh_canary.py      # SSH honeypot
-│   ├── ftp_canary.py      # FTP honeypot
-│   └── http_canary.py     # HTTP honeypot
-├── alert_engine/          # Alert encryption & dispatch
-│   ├── __init__.py
-│   ├── crypto.py          # AES-256-GCM encryption
-│   └── dispatcher.py      # Alert transmission
-├── monitor/               # Central monitoring
-│   ├── __init__.py
-│   └── server.py          # Monitor server
-├── dashboard/             # Web UI
-│   ├── __init__.py
-│   └── app.py             # Flask application
-├── shared/                # Shared utilities
-│   ├── __init__.py
-│   └── models.py          # Data models
-├── config.yaml            # Configuration (ports, keys, etc.)
-├── requirements.txt       # Python dependencies
-├── main.py               # Entry point
-└── README.md             # This file
-```
+- Multiple canary services: SSH, FTP, HTTP, and SMB
+- Encrypted alert delivery and local broadcast support
+- SQLite-backed alert storage with duplicate protection
+- Threat scoring and alert severity mapping
+- Proxy/TOR/datacenter detection hints
+- Behavior classification such as scanner, brute-force, bot, or human-like activity
+- GeoIP enrichment support for country-level context
+- Real-time dashboard updates via WebSocket
+- Startup option to clear old alerts with --fresh
 
 ## Requirements
 
-- **Python**: 3.11 or higher
-- **Dependencies** (see requirements.txt):
-  - `cryptography` - AES-256-GCM encryption
-  - `flask` - Dashboard web framework
-  - `flask-socketio` - Real-time WebSocket communication
-  - `pyyaml` - Configuration file parsing
-  - `scapy` - Network packet manipulation
-  - `paramiko` - SSH protocol implementation
-  - `pyftpdlib` - FTP server implementation
-  - `colorama` - Terminal colors
-  - `sqlalchemy` - Database ORM
+- Python 3.10+
+- See [requirements.txt](requirements.txt) for the pinned dependency list
 
-## Installation
+## Quick start
 
-### 1. Clone/Navigate to Project
-```bash
-cd canary-net
+### 1. Create and activate a virtual environment
+
+On Windows:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 ```
 
-### 2. Create Virtual Environment (Recommended)
-```bash
-# Windows
-python -m venv venv
-venv\Scripts\activate
+### 2. Install dependencies
 
-# Linux/macOS
-python3 -m venv venv
-source venv/bin/activate
-```
-
-### 3. Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Configure System
-Edit `config.yaml` to set:
-- Monitor server host/port
-- Canary service ports
-- Encryption key (via environment variable)
-- Dashboard settings
-
-## Configuration
-
-### config.yaml
-
-Key configuration sections:
-
-```yaml
-monitor:
-  host: 127.0.0.1      # Monitor bind address
-  port: 5000           # Monitor port
-
-canaries:
-  ssh:
-    port: 2222         # SSH honeypot port
-  ftp:
-    port: 2121         # FTP honeypot port
-  http:
-    port: 8080         # HTTP honeypot port
-
-dashboard:
-  host: 0.0.0.0
-  port: 5001
-```
-
-### Environment Variables
+### 3. Generate an encryption key (optional on first run)
 
 ```bash
-# Set encryption key
-export CANARY_ENCRYPTION_KEY=your-256-bit-key
+python main.py --generate-key
 ```
 
-## Usage
+### 4. Start the full stack
 
-### Start All Services
 ```bash
 python main.py --all
 ```
 
-### Start Individual Services
+### 5. Open the dashboard
 
-```bash
-# Monitor Server
-python main.py --monitor
+The dashboard is typically available at:
 
-# Dashboard
-python main.py --dashboard
-
-# Canaries
-python main.py --canaries
+```text
+http://localhost:5000
 ```
 
-### Monitor Dashboard
-Access the web UI at: `http://localhost:5001`
+## Useful startup options
 
-## Features
+```bash
+python main.py --monitor-only
+python main.py --canaries-only
+python main.py --no-dashboard
+python main.py --fresh
+```
 
-- ✅ **Multi-service honeypots** - SSH, FTP, HTTP services
-- ✅ **Encrypted alerts** - AES-256-GCM encryption
-- ✅ **Real-time monitoring** - WebSocket-based dashboard
-- ✅ **Centralized logging** - SQLite alert database
-- ✅ **Modular design** - Easy to extend with new canaries
-- ✅ **Alert history** - Persistent storage and replay
+## Configuration
+
+The runtime settings are defined in [config.yaml](config.yaml). You can adjust:
+
+- monitor host and port
+- broadcast and dashboard ports
+- canary enablement and ports
+- database and key file locations
+
+## Notes
+
+- The SSH canary uses an alternate port by default to avoid conflicts with system SSH services.
+- The dashboard and monitor components are designed to run together for live alert visualization.
+- The database is stored in the project root by default as alerts.db.
 
 ## Development
 
-### Add a New Canary Service
+If you want to extend the system:
 
-1. Create new file in `canaries/` (e.g., `dns_canary.py`)
-2. Implement `AlertCanary` base interface
-3. Register in `config.yaml`
-4. Update `main.py` to instantiate new service
+1. Add a new canary under [canaries/](canaries/)
+2. Wire it into [main.py](main.py)
+3. Optionally add new enrichment logic under [shared/](shared/)
+4. Run the test suite with:
 
-### Add Alert Handlers
-
-```python
-from monitor.server import MonitorServer
-
-server = MonitorServer()
-
-def my_handler(alert):
-    print(f"Security Alert: {alert['event']}")
-
-server.register_handler(my_handler)
-```
-
-## Security Considerations
-
-- ⚠️ **Key Management**: Store encryption keys securely (use environment variables or key management services)
-- ⚠️ **Network Security**: Run canaries behind firewalls; only expose through secure channels
-- ⚠️ **Authentication**: Add authentication to dashboard before production deployment
-- ⚠️ **Logging**: Configure appropriate log retention policies
-
-## Troubleshooting
-
-### Port Already in Use
 ```bash
-# Windows
-netstat -ano | findstr :PORT
-
-# Linux/macOS
-lsof -i :PORT
+pytest
 ```
-
-### Encryption Key Issues
-Ensure `CANARY_ENCRYPTION_KEY` is properly set and 32 bytes (256-bit)
-
-### Dashboard Connection Failed
-Check that monitor server is running and accessible from dashboard host
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Submit a pull request
-
-## License
-
-MIT License - See LICENSE file for details
-
-## Support
-
-For issues, questions, or contributions, please open an issue on GitHub.
-
----
-
-**Built for enterprise security monitoring and threat detection**

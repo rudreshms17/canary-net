@@ -6,6 +6,7 @@ Real-time alert monitoring interface with SocketIO
 from flask import Flask, render_template, jsonify, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from datetime import datetime
+from sqlalchemy import text
 import logging
 
 logger = logging.getLogger(__name__)
@@ -205,33 +206,104 @@ def create_app(config=None):
     
     @app.route('/api/stats')
     def get_stats():
-        """Get aggregated alert statistics"""
+        """Get today's threat-level statistics from the alerts table."""
         try:
-            stats = {
-                "timestamp": datetime.utcnow().isoformat(),
-                "db": {},
-                "monitor": {},
-                "alerts": {}
-            }
-            
-            # Database statistics from CanaryDB
             if app.monitor_server and app.monitor_server.db:
-                stats["db"] = app.monitor_server.db.get_stats()
-            
-            # Monitor server statistics
-            if app.monitor_server:
-                stats["monitor"] = app.monitor_server.get_statistics()
-            
-            # Alert manager statistics
-            if app.alert_manager:
-                stats["alerts"] = app.alert_manager.get_statistics()
-            
-            return jsonify(stats)
-        
+                with app.monitor_server.db.engine.connect() as connection:
+                    table_info = connection.execute(text("PRAGMA table_info(alerts)")).fetchall()
+                    columns = {row[1] for row in table_info}
+
+                    total_today = connection.execute(
+                        text("SELECT COUNT(*) FROM alerts WHERE date(timestamp) = date('now')")
+                    ).scalar_one()
+
+                    critical = 0
+                    high = 0
+                    warning = 0
+                    info = 0
+
+                    if "threat_level" in columns:
+                        threat_rows = connection.execute(
+                            text("SELECT threat_level FROM alerts WHERE date(timestamp) = date('now')")
+                        ).fetchall()
+                        for (threat_level,) in threat_rows:
+                            if threat_level is None:
+                                info += 1
+                            else:
+                                level = str(threat_level).upper()
+                                if level == "CRITICAL":
+                                    critical += 1
+                                elif level == "HIGH":
+                                    high += 1
+                                elif level == "WARNING":
+                                    warning += 1
+                                else:
+                                    info += 1
+                    else:
+                        info = total_today
+
+                    return jsonify({
+                        "total_today": int(total_today or 0),
+                        "critical": int(critical or 0),
+                        "high": int(high or 0),
+                        "warning": int(warning or 0),
+                        "info": int(info or 0)
+                    })
+
+            return jsonify({
+                "total_today": 0,
+                "critical": 0,
+                "high": 0,
+                "warning": 0,
+                "info": 0
+            })
+
         except Exception as e:
             logger.error(f"[Dashboard] Error fetching stats: {e}")
-        
-        return jsonify({"error": "Database error"}), 500
+            return jsonify({
+                "total_today": 0,
+                "critical": 0,
+                "high": 0,
+                "warning": 0,
+                "info": 0
+            }), 500
+
+    @app.route('/api/geo/stats')
+    def get_geo_stats():
+        """Get country-level alert counts from the alerts table."""
+        try:
+            if app.monitor_server and app.monitor_server.db:
+                with app.monitor_server.db.engine.connect() as connection:
+                    table_info = connection.execute(text("PRAGMA table_info(alerts)")).fetchall()
+                    columns = {row[1] for row in table_info}
+
+                    if "geo_country" not in columns:
+                        return jsonify({"country_stats": []})
+
+                    rows = connection.execute(
+                        text(
+                            "SELECT geo_country, geo_country_code, COUNT(*) as count "
+                            "FROM alerts WHERE geo_country IS NOT NULL "
+                            "GROUP BY geo_country, geo_country_code "
+                            "ORDER BY count DESC"
+                        )
+                    ).fetchall()
+
+                    country_stats = [
+                        {
+                            "country": row[0] or "Unknown",
+                            "country_code": row[1] or "??",
+                            "count": int(row[2] or 0)
+                        }
+                        for row in rows
+                    ]
+                    return jsonify({"country_stats": country_stats})
+
+            return jsonify({"country_stats": []})
+
+        except Exception as e:
+            logger.error(f"[Dashboard] Error fetching geo stats: {e}")
+            return jsonify({"country_stats": []}), 500
     
     # =====================================
     # SocketIO Events
@@ -256,7 +328,7 @@ def create_app(config=None):
             logger.debug(f"[Dashboard] Error sending initial stats: {e}")
     
     @socketio.on('disconnect')
-    def handle_disconnect():
+    def handle_disconnect(reason=None):
         """Handle client WebSocket disconnection"""
         logger.debug("[Dashboard] Client disconnected")
     
